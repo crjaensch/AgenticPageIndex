@@ -26,6 +26,7 @@ env/
 
 # Project-specific ignores
 logs/
+test_logs/
 .ruff_cache
 *.json
 !config.json

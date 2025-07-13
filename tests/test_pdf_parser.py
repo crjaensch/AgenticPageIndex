@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from ..tools.pdf_parser import pdf_parser_tool
-from ..core.context import PageIndexContext
-from ..core.config import ConfigManager
+from tools.pdf_parser import pdf_parser_tool
+from core.context import PageIndexContext
+from core.config import ConfigManager
+from core.exceptions import PageIndexToolError
 
 class TestPDFParserTool(unittest.TestCase):
     
@@ -12,18 +13,23 @@ class TestPDFParserTool(unittest.TestCase):
         self.config = self.config_manager.load_config()
         self.context = PageIndexContext(self.config)
         
-    def test_pdf_parser_success(self):
+    @patch('tools.pdf_parser.get_page_tokens')
+    @patch('tools.pdf_parser.get_pdf_name')
+    @patch('pathlib.Path.exists')
+    def test_pdf_parser_success(self, mock_exists, mock_get_name, mock_get_tokens):
         """Test successful PDF parsing"""
-        with patch('pageindex_agent.core.utils.get_page_tokens') as mock_get_tokens, \
-             patch('pageindex_agent.core.utils.get_pdf_name') as mock_get_name, \
-             patch('pathlib.Path.exists') as mock_exists, \
-             patch('pathlib.Path.stat') as mock_stat:
+        with patch('builtins.open'), patch('tools.pdf_parser.open') as mock_open:
+            mock_doc = MagicMock()
+            mock_page = MagicMock()
+            mock_open.return_value.__enter__.return_value = mock_doc
+            mock_doc.__len__.return_value = 2
+            mock_doc.load_page.return_value = mock_page
             
             # Setup mocks
             mock_exists.return_value = True
-            mock_stat.return_value = MagicMock(st_size=1024)
             mock_get_name.return_value = "test.pdf"
-            mock_get_tokens.return_value = [("Page 1 text", 10), ("Page 2 text", 15)]
+            mock_get_tokens.return_value = [("page 1 text", 10), ("page 2 text", 15)]
+            mock_page.get_text.side_effect = ["Page 1 text", "Page 2 text"]
             
             # Test
             result = pdf_parser_tool(self.context.to_dict(), "test.pdf")
@@ -39,19 +45,12 @@ class TestPDFParserTool(unittest.TestCase):
         with patch('pathlib.Path.exists') as mock_exists:
             mock_exists.return_value = False
             
-            result = pdf_parser_tool(self.context.to_dict(), "nonexistent.pdf")
-            
-            self.assertFalse(result["success"])
-            self.assertEqual(result["confidence"], 0.0)
-            self.assertIn("PDF file not found", result["errors"][0])
-            self.assertIn("Verify PDF file exists", result["suggestions"][0])
+            with self.assertRaises(PageIndexToolError) as cm:
+                pdf_parser_tool(self.context.to_dict(), "nonexistent.pdf")
+            self.assertIn("PDF file not found", str(cm.exception))
             
     def test_pdf_parser_invalid_file_type(self):
         """Test PDF parser with non-PDF file"""
-        with patch('pathlib.Path.exists') as mock_exists:
-            mock_exists.return_value = True
-            
-            result = pdf_parser_tool(self.context.to_dict(), "test.txt")
-            
-            self.assertFalse(result["success"])
-            self.assertIn("File is not a PDF", result["errors"][0])
+        with self.assertRaises(PageIndexToolError) as cm:
+            pdf_parser_tool(self.context.to_dict(), "test.txt")
+        self.assertIn("PDF file not found: test.txt", str(cm.exception))

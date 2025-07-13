@@ -99,9 +99,12 @@ def toc_detector_tool(context: Dict[str, Any]) -> Dict[str, Any]:
         
         return {
             "success": False,
-            "context": context.to_dict() if 'context' in locals() else context,
-            "confidence": 0.0,
-            "metrics": {},
+            "context": context.to_dict() if 'context' in locals() else None,
+            "metrics": {
+                "toc_found": False,
+                "toc_pages_count": 0,
+                "has_page_numbers": False
+            },
             "errors": [str(e)],
             "suggestions": suggestions
         }

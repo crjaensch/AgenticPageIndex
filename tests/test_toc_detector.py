@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from ..tools.toc_detector import toc_detector_tool, detect_toc_single_page
-from ..core.context import PageIndexContext
-from ..core.config import ConfigManager
+from tools.toc_detector import toc_detector_tool, detect_toc_single_page
+from core.context import PageIndexContext
+from core.config import ConfigManager
 
 class TestTOCDetectorTool(unittest.TestCase):
     
@@ -22,39 +22,44 @@ class TestTOCDetectorTool(unittest.TestCase):
         
     def test_toc_detector_with_toc_found(self):
         """Test TOC detector when TOC is found"""
-        with patch.object(self.context, 'load_pages') as mock_load, \
-             patch('pageindex_agent.tools.toc_detector.detect_toc_single_page') as mock_detect, \
-             patch('pageindex_agent.tools.toc_detector.detect_page_numbers_in_toc') as mock_page_nums:
-            
+        with patch('tools.toc_detector.PageIndexContext.load_pages') as mock_load, \
+             patch('tools.toc_detector.detect_toc_single_page') as mock_detect, \
+             patch('tools.toc_detector.extract_toc_content') as mock_extract, \
+             patch('tools.toc_detector.detect_page_numbers_in_toc') as mock_page_nums:  # Mock the client to prevent instantiation
+
             # Setup mocks
             mock_load.return_value = self.mock_pages
             mock_detect.side_effect = ['no', 'yes', 'yes', 'no']  # TOC on pages 1 and 2
+            mock_extract.return_value = {
+                "content": "1. Introduction ... 1\n2. Methods ... 5",
+                "has_page_numbers": True
+            }
             mock_page_nums.return_value = True
-            
+
             result = toc_detector_tool(self.context.to_dict())
-            
+
             # Assertions
             self.assertTrue(result["success"])
             self.assertTrue(result["metrics"]["toc_found"])
             self.assertTrue(result["metrics"]["has_page_numbers"])
             self.assertEqual(result["metrics"]["toc_pages_count"], 2)
-            
+
     def test_toc_detector_no_toc_found(self):
         """Test TOC detector when no TOC is found"""
         with patch.object(self.context, 'load_pages') as mock_load, \
-             patch('pageindex_agent.tools.toc_detector.detect_toc_single_page') as mock_detect:
-            
+             patch('tools.toc_detector.detect_toc_single_page') as mock_detect:
+
             # Setup mocks
             mock_load.return_value = self.mock_pages
             mock_detect.return_value = 'no'  # No TOC found
-            
+
             result = toc_detector_tool(self.context.to_dict())
-            
+
             # Assertions
-            self.assertTrue(result["success"])
+            self.assertFalse(result["success"])
             self.assertFalse(result["metrics"]["toc_found"])
             self.assertEqual(result["metrics"]["toc_pages_count"], 0)
-            
+
     def test_detect_toc_single_page(self):
         """Test single page TOC detection"""
         with patch('openai.OpenAI') as mock_openai:

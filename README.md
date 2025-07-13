@@ -1,12 +1,12 @@
-# PageIndex Agent
+# Agentic PageIndex
 
-An intelligent agent for extracting hierarchical structure from PDF documents using Large Language Models (LLMs) and the OpenAI Agent SDK.
+An intelligent agent for extracting the hierarchical structure from PDF documents using Large Language Models (LLMs) and the OpenAI Agent SDK.
 
 ## Project Background and Motivation
 
-This project is a complete re-architecture of the original `PageIndex` algorithm, which can be found at [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex).
+This project is a complete rewrite of the original `PageIndex` algorithm, which can be found at [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex).
 
-The original implementation, while effective, was a monolithic script that proved difficult to understand, maintain, and extend. This new version, `pageindex-agent`, was created to address these limitations by:
+The original implementation, while effective, is a monolithic script that proved difficult to understand, maintain, and extend. This new version, `Agentic PageIndex`, has been created to address these limitations by:
 
 -   **Adopting an Agent-Based Architecture**: Leveraging the OpenAI Agent SDK, the process is broken down into a pipeline of specialized, cooperative tools. This makes the system more modular, robust, and easier to debug.
 -   **Enhancing Core Logic**: The core document structure extraction logic has been refined and expanded with multiple strategies and fallbacks for greater accuracy and reliability across a wider range of PDF layouts.
@@ -61,16 +61,16 @@ with open("structure.json", "w") as f:
 
 ```bash
 # Basic usage
-pageindex document.pdf
+python3 cli.py document.pdf
 
 # With options
-pageindex document.pdf --add-summaries --model gpt-4o --output custom_output.json
+python3 cli.py document.pdf --add-summaries --model gpt-4o --output custom_output.json
 
 # List processing sessions
-pageindex --list-sessions
+python3 cli.py --list-sessions
 
 # Check session status
-pageindex --session-status <session_id>
+python3 cli.py --session-status <session_id>
 ```
 
 ## Configuration
@@ -194,14 +194,8 @@ pip install -r requirements_test.txt
 Then, run the test suite:
 
 ```bash
-# Unit tests
-python -m pytest pageindex_agent/tests/test_*.py -v
-
-# Integration tests
-python -m pytest pageindex_agent/tests/test_integration.py -v
-
 # All tests
-python -m pytest pageindex_agent/tests/ -v
+python3 -m pytest -v
 ```
 
 ## Output Format
@@ -242,10 +236,10 @@ The agent returns a structured JSON object:
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License
 
 ## Support
 
 - Issues: Report bugs and feature requests via GitHub Issues
 - Documentation: See the `docs/` directory for detailed documentation
-- Examples: Check the `examples/` directory for more usage patterns
+- Examples: Check the `example_usage.py` file for more usage patterns
