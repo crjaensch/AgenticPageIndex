@@ -13,7 +13,7 @@ dist/
 # Virtual Environments
 .env
 .venv
-.pageindex
+.pageindex/
 venv/
 env/
 
@@ -26,6 +26,7 @@ env/
 
 # Project-specific ignores
 logs/
+.ruff_cache
 *.json
 !config.json
 
