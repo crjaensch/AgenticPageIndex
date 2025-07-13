@@ -1,4 +1,4 @@
-# Agentic PageIndex
+# AgenticPageIndex
 
 An intelligent agent for extracting the hierarchical structure from PDF documents using Large Language Models (LLMs) and the OpenAI Agent SDK.
 
@@ -6,7 +6,7 @@ An intelligent agent for extracting the hierarchical structure from PDF document
 
 This project is a complete rewrite of the original `PageIndex` algorithm, which can be found at [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex).
 
-The original implementation, while effective, is a monolithic script that proved difficult to understand, maintain, and extend. This new version, `Agentic PageIndex`, has been created to address these limitations by:
+The original implementation, while effective, is a monolithic script that proved difficult to understand, maintain, and extend. This new version, `AgenticPageIndex`, has been created to address these limitations by:
 
 -   **Adopting an Agent-Based Architecture**: Leveraging the OpenAI Agent SDK, the process is broken down into a pipeline of specialized, cooperative tools. This makes the system more modular, robust, and easier to debug.
 -   **Enhancing Core Logic**: The core document structure extraction logic has been refined and expanded with multiple strategies and fallbacks for greater accuracy and reliability across a wider range of PDF layouts.
@@ -27,8 +27,8 @@ This project aims to provide a powerful, flexible, and transparent solution for 
 ## Installation
 
 ```bash
-git clone https://github.com/your-username/Agentic_PageIndex
-cd Agentic_PageIndex
+git clone https://github.com/your-username/AgenticPageIndex
+cd AgenticPageIndex
 pip install -e .
 ```
 
