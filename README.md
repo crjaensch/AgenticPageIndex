@@ -2,6 +2,18 @@
 
 An intelligent agent for extracting hierarchical structure from PDF documents using Large Language Models (LLMs) and the OpenAI Agent SDK.
 
+## Project Background and Motivation
+
+This project is a complete re-architecture of the original `PageIndex` algorithm, which can be found at [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex).
+
+The original implementation, while effective, was a monolithic script that proved difficult to understand, maintain, and extend. This new version, `pageindex-agent`, was created to address these limitations by:
+
+-   **Adopting an Agent-Based Architecture**: Leveraging the OpenAI Agent SDK, the process is broken down into a pipeline of specialized, cooperative tools. This makes the system more modular, robust, and easier to debug.
+-   **Enhancing Core Logic**: The core document structure extraction logic has been refined and expanded with multiple strategies and fallbacks for greater accuracy and reliability across a wider range of PDF layouts.
+-   **Improving Developer Experience**: With a clear separation of concerns, comprehensive logging, and a configurable design, the new architecture is significantly more developer-friendly.
+
+This project aims to provide a powerful, flexible, and transparent solution for hierarchical data extraction from complex documents.
+
 ## Features
 
 - **Intelligent TOC Detection**: Automatically detects table of contents and analyzes structure
@@ -15,14 +27,8 @@ An intelligent agent for extracting hierarchical structure from PDF documents us
 ## Installation
 
 ```bash
-pip install pageindex_agent
-```
-
-Or install from source:
-
-```bash
-git clone <repository_url>
-cd pageindex_agent
+git clone https://github.com/your-username/Agentic_PageIndex
+cd Agentic_PageIndex
 pip install -e .
 ```
 
@@ -172,9 +178,9 @@ for pdf_file in pdf_dir.glob("*.pdf"):
         with open(output_file, "w") as f:
             json.dump(result, f, indent=2)
             
-        print(f"✓ Processed: {pdf_file.name}")
+        print(f" Processed: {pdf_file.name}")
     except Exception as e:
-        print(f"✗ Failed: {pdf_file.name} - {e}")
+        print(f" Failed: {pdf_file.name} - {e}")
 ```
 
 ## Testing
