@@ -1,0 +1,25 @@
+global:
+  model: "gpt-4o-mini"
+  log_dir: "./logs"
+  session_timeout: 3600
+
+pdf_parser:
+  pdf_parser: "PyMuPDF"  # or "PyPDF2"
+
+toc_detector:
+  toc_check_page_num: 20
+
+structure_extractor:
+  max_token_num_each_node: 20000
+  max_retries: 3
+
+structure_verifier:
+  max_fix_attempts: 3
+  accuracy_threshold: 0.6
+
+structure_processor:
+  max_page_num_each_node: 10
+  if_add_node_id: "yes"
+  if_add_node_summary: "no"
+  if_add_doc_description: "yes"
+  if_add_node_text: "no"

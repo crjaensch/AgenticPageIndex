@@ -1,0 +1,36 @@
+# ruff.toml
+
+# Exclude directories from linting.
+# Add any other directories you want to exclude here.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "scratch",  # Exclude the scratch directory
+    ".pageindex", # Exclude the pageindex directory
+]
+
+# Same as Black.
+line-length = 120
+indent-width = 4
+
+[lint]
+# Add or remove rules here.
+# For a full list of rules, see: https://docs.astral.sh/ruff/rules/
+select = ["F"]
