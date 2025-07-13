@@ -185,7 +185,13 @@ for pdf_file in pdf_dir.glob("*.pdf"):
 
 ## Testing
 
-Run the test suite:
+First, install the testing dependencies:
+
+```bash
+pip install -r requirements_test.txt
+```
+
+Then, run the test suite:
 
 ```bash
 # Unit tests

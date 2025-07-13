@@ -1,0 +1,12 @@
+openai>=1.0.0
+tiktoken>=0.5.0
+PyPDF2>=3.0.0
+PyMuPDF>=1.23.0
+python-dotenv>=0.19.0
+PyYAML>=6.0
+aiofiles>=23.0.0
+ruff>=0.1.0
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=3.0.0
