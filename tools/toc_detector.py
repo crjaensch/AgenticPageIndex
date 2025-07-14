@@ -134,18 +134,50 @@ def detect_toc_single_page(content: str, model: str) -> str:
     client = openai.OpenAI()
     
     prompt = f"""
-    Your job is to detect if there is a table of content provided in the given text.
+You are an expert document analyzer tasked with detecting genuine table of contents pages in PDF documents.
 
-    Given text: {content}
+Your job is to determine if the given text represents a true TABLE OF CONTENTS that outlines the document's structure.
 
-    return the following JSON format:
-    {{
-        "thinking": <why do you think there is a table of content in the given text>
-        "toc_detected": "<yes or no>",
-    }}
+## CRITERIA FOR TRUE TABLE OF CONTENTS:
+A genuine TOC must have ALL of the following characteristics:
+1. **Hierarchical organization**: Shows document structure with chapters, sections, and subsections
+2. **Descriptive titles**: Contains meaningful section/chapter names that describe document content
+3. **Page references**: Includes page numbers, dots/dashes leading to numbers, or similar navigation aids
+4. **Structural purpose**: Serves as a navigation guide for the entire document
+5. **Content organization**: Lists major topics/themes that would logically organize a full document
 
-    Directly return the final JSON structure. Do not output anything else.
-    Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents."""
+## EXPLICIT EXCLUSIONS (These are NOT table of contents):
+- **Lists of figures, tables, equations, or illustrations**
+- **Mathematical formulas, equations, or technical notation**
+- **Bibliographies, references, or citation lists**
+- **Index or alphabetical listings**
+- **Abstract, summary, or executive summary sections**
+- **Notation lists, symbol definitions, or acronym explanations**
+- **Appendix listings or supplementary material lists**
+- **Glossary or terminology definitions**
+- **Author information, acknowledgments, or preface content**
+- **Single-level bullet points or simple lists**
+- **Code listings, algorithm descriptions, or technical specifications**
+
+## ANALYSIS INSTRUCTIONS:
+1. First, identify if there are hierarchical section titles (not just lists)
+2. Check for page number references or navigation elements
+3. Verify the content describes document organization (not just data/figures)
+4. Confirm this serves as a structural guide to a larger work
+
+<GivenText> 
+{content}
+</GivenText>
+
+Return the following JSON format:
+{{
+    "thinking": "<Detailed analysis: What hierarchical structure do you see? Are there page numbers? Does this organize document content or just list items? Why does this qualify or disqualify as a TOC?>",
+    "toc_detected": "<yes or no>",
+    "confidence": "<high/medium/low>",
+    "key_indicators": "<List the specific elements that support your decision>"
+}}
+
+Directly return the final JSON structure. Do not output anything else."""
 
     try:
         response = client.chat.completions.create(
