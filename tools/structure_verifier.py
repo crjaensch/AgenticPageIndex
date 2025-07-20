@@ -173,19 +173,20 @@ async def check_title_on_page(item: Dict[str, Any], pages: List[tuple], model: s
     page_text = pages[physical_index - 1][0]
     
     prompt = f"""
-    Your job is to check if the given section appears or starts in the given page_text.
+Check if this section title appears or starts on the given page.
 
-    Note: do fuzzy matching, ignore any space inconsistency in the page_text.
+TASK: Determine if the section title is present in the page text.
 
-    The given section title is {title}.
-    The given page_text is {page_text}.
-    
-    Reply format:
-    {{
-        "thinking": <why do you think the section appears or starts in the page_text>
-        "answer": "yes or no" (yes if the section appears or starts in the page_text, no otherwise)
-    }}
-    Directly return the final JSON structure. Do not output anything else."""
+RULES:
+1. Use fuzzy matching - ignore spacing, punctuation, case differences
+2. Look for the section title or very similar variations
+3. Section can appear anywhere on the page (beginning, middle, end)
+4. Consider partial matches if they're clearly the same section
+
+OUTPUT: {{"answer": "yes"}} or {{"answer": "no"}}
+
+Section Title: {title}
+Page Text: {page_text}"""
     
     try:
         response = await client.chat.completions.create(
@@ -260,20 +261,25 @@ async def fix_single_item(item: Dict[str, Any], pages: List[tuple], model: str, 
         content += f"<physical_index_{page_idx + 1}>\n{pages[page_idx][0]}\n<physical_index_{page_idx + 1}>\n\n"
     
     prompt = f"""
-    You are given a section title and several pages of a document, your job is to find the physical index of the start page of the section in the partial document.
+Find where this section starts in the document pages.
 
-    The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
+TASK: Locate the physical_index where the section title begins.
 
-    Reply in a JSON format:
-    {{
-        "thinking": <explain which page, started and closed by <physical_index_X>, contains the start of this section>,
-        "physical_index": "<physical_index_X>" (keep the format),
-        "found": true/false
-    }}
-    Directly return the final JSON structure. Do not output anything else.
-    
-    Section Title: {title}
-    Document pages: {content}"""
+RULES:
+1. Look for the section title in the provided pages
+2. Return the physical_index tag where the section starts
+3. Use fuzzy matching - ignore spacing/formatting differences
+4. If section not found, set found: false
+
+OUTPUT:
+{{
+  "physical_index": "<physical_index_X>",
+  "found": true
+}}
+
+Section Title: {title}
+Document Pages:
+{content}"""
     
     try:
         response = await client.chat.completions.create(

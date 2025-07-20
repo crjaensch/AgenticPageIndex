@@ -360,20 +360,31 @@ def add_node_ids(structure: List[Dict[str, Any]], node_id: int = 0) -> int:
 
 
 def add_node_text_recursive(structure: List[Dict[str, Any]], pages: List[tuple], context):
-    """Recursively add text content to each node"""
+    """Recursively add text content to each node using page-level extraction"""
     
     context.log_step("add_node_text_recursive", "starting_text_addition")
+    
     def add_text(node, pages):
-        """Add text content to a node"""
+        """Add text content to a node using complete pages"""
         start = node.get("start_index")
         end = node.get("end_index")
+        title = node.get("title", "")
         
         # Log the node being processed
-        context.log_step("add_node_text_recursive", "adding_text", {"node_title": node.get("title"), "start": start, "end": end})
+        context.log_step("add_node_text_recursive", "adding_text", {
+            "node_title": title, "start": start, "end": end
+        })
 
         # Only add text if indices are valid and within the bounds of the document
         if start is not None and end is not None and 0 < start <= end <= len(pages):
+            # Extract complete text from all pages in the range
             node["text"] = "".join(p[0] for p in pages[start-1:end])
+            
+            context.log_step("add_node_text_recursive", "text_added", {
+                "node_title": title,
+                "pages_included": f"{start}-{end}",
+                "text_length": len(node["text"])
+            })
             
         if 'nodes' in node:
             for child in node['nodes']:

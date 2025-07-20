@@ -264,26 +264,28 @@ def transform_toc_to_json(toc_content: str, model: str) -> List[Dict[str, Any]]:
     client = openai.OpenAI()
     
     prompt = f"""
-    You are given a table of contents, You job is to transform the whole table of content into a JSON format included table_of_contents.
+Transform this table of contents into JSON format.
 
-    structure is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+RULES:
+1. Extract hierarchical structure (1, 1.1, 1.2, 2, 2.1, etc.) - use None if no numbering
+2. Keep original titles, fix only spacing/formatting issues
+3. Extract page numbers if present - use None if missing
+4. Handle multi-column layouts and varied indentation
+5. Ignore headers, footers, and non-content elements
 
-    The response should be in the following JSON format: 
-    {{
-    "table_of_contents": [
-        {{
-            "structure": <structure index, "x.x.x" or None> (string),
-            "title": <title of the section>,
-            "page": <page number or None>,
-        }},
-        ...
-        ],
-    }}
-    You should transform the full table of contents in one go.
-    Directly return the final JSON structure, do not output anything else.
-    
-    Given table of contents:
-    {toc_content}"""
+OUTPUT FORMAT:
+{{
+"table_of_contents": [
+  {{"structure": "1", "title": "Introduction", "page": 5}},
+  {{"structure": "1.1", "title": "Overview", "page": 6}},
+  {{"structure": None, "title": "Untitled Section", "page": None}}
+]
+}}
+
+Return only valid JSON, no explanations.
+
+TOC Content:
+{toc_content}"""
     
     try:
         response = client.chat.completions.create(
@@ -305,31 +307,24 @@ def extract_toc_physical_indices(toc_structured: List[Dict[str, Any]],
     client = openai.OpenAI()
     
     prompt = f"""
-    You are given a table of contents in a json format and several pages of a document, your job is to add the physical_index to the table of contents in the json format.
+Match TOC sections to physical page locations.
 
-    The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
+TASK: Find where each TOC section starts in the document pages.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+RULES:
+1. Look for section titles in the document content
+2. Match the physical_index tag where the section begins
+3. Only add physical_index if section is clearly found
+4. Keep exact format: "<physical_index_X>"
+5. Skip sections not found in provided pages
 
-    The response should be in the following JSON format: 
-    [
-        {{
-            "structure": <structure index, "x.x.x" or None> (string),
-            "title": <title of the section>,
-            "physical_index": "<physical_index_X>" (keep the format)
-        }},
-        ...
-    ]
+OUTPUT: Return the TOC JSON with physical_index added where found.
 
-    Only add the physical_index to the sections that are in the provided pages.
-    If the section is not in the provided pages, do not add the physical_index to it.
-    Directly return the final JSON structure. Do not output anything else.
-    
-    Table of contents:
-    {json.dumps(toc_structured, indent=2)}
-    
-    Document pages:
-    {content}"""
+TOC:
+{json.dumps(toc_structured, indent=2)}
+
+Document Pages:
+{content}"""
     
     try:
         response = client.chat.completions.create(
@@ -349,32 +344,24 @@ def match_toc_to_content(content: str, toc_items: List[Dict[str, Any]], model: s
     client = openai.OpenAI()
     
     prompt = f"""
-    You are given an JSON structure of a document and a partial part of the document. Your task is to check if the title that is described in the structure is started in the partial given document.
+Update TOC items with physical_index where sections start in this document part.
 
-    The provided text contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X. 
+TASK: Find TOC section titles that begin in the current document content.
 
-    If the full target section starts in the partial given document, insert the given JSON structure with the "start": "yes", and "start_index": "<physical_index_X>".
+RULES:
+1. Look for exact or close title matches in the content
+2. If section starts here, add "physical_index": "<physical_index_X>"
+3. If section doesn't start here, leave physical_index unchanged
+4. Preserve all existing data from previous processing
+5. Match section beginnings, not just mentions
 
-    If the full target section does not start in the partial given document, insert "start": "no",  "start_index": None.
+OUTPUT: Return updated TOC JSON with new physical_index values added.
 
-    The response should be in the following format. 
-        [
-            {{
-                "structure": <structure index, "x.x.x" or None> (string),
-                "title": <title of the section>,
-                "start": "<yes or no>",
-                "physical_index": "<physical_index_X> (keep the format)" or None
-            }},
-            ...
-        ]    
-    The given structure contains the result of the previous part, you need to fill the result of the current part, do not change the previous result.
-    Directly return the final JSON structure. Do not output anything else.
-    
-    Current Partial Document:
-    {content}
-    
-    Given Structure:
-    {json.dumps(toc_items, indent=2)}"""
+Document Content:
+{content}
+
+Current TOC Structure:
+{json.dumps(toc_items, indent=2)}"""
     
     try:
         response = client.chat.completions.create(
@@ -383,14 +370,7 @@ def match_toc_to_content(content: str, toc_items: List[Dict[str, Any]], model: s
             temperature=0,
         )
         
-        json_result = extract_json(response.choices[0].message.content)
-        
-        # Remove temporary 'start' field
-        for item in json_result:
-            if 'start' in item:
-                del item['start']
-        
-        return json_result
+        return extract_json(response.choices[0].message.content)
     except Exception as e:
         print(f"Error in content matching: {e}")
         return toc_items
@@ -401,30 +381,26 @@ def generate_structure_from_content(content: str, model: str) -> List[Dict[str, 
     client = openai.OpenAI()
     
     prompt = f"""
-    You are an expert in extracting hierarchical tree structure, your task is to generate the tree structure of the document.
+Extract document structure from content.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+TASK: Identify sections, subsections, and their hierarchy.
 
-    For the title, you need to extract the original title from the text, only fix the space inconsistency.
+RULES:
+1. Detect headings, titles, and section breaks
+2. Assign hierarchical numbers (1, 1.1, 1.2, 2, 2.1, etc.)
+3. Use original titles, fix only spacing issues
+4. Find physical_index where each section starts: "<physical_index_X>"
+5. Include all significant structural elements
+6. Skip headers, footers, page numbers
 
-    The provided text contains tags like <physical_index_X> and <physical_index_X> to indicate the start and end of page X. 
+OUTPUT FORMAT:
+[
+  {{"structure": "1", "title": "Introduction", "physical_index": "<physical_index_1>"}},
+  {{"structure": "1.1", "title": "Overview", "physical_index": "<physical_index_2>"}}
+]
 
-    For the physical_index, you need to extract the physical index of the start of the section from the text. Keep the <physical_index_X> format.
-
-    The response should be in the following format. 
-        [
-            {{
-                "structure": <structure index, "x.x.x"> (string),
-                "title": <title of the section, keep the original title>,
-                "physical_index": "<physical_index_X> (keep the format)"
-            }},
-            ...
-        ]    
-
-    Directly return the final JSON structure. Do not output anything else.
-    
-    Given text:
-    {content}"""
+Document Content:
+{content}"""
     
     try:
         response = client.chat.completions.create(
@@ -445,35 +421,25 @@ def generate_additional_structure(existing_structure: List[Dict[str, Any]],
     client = openai.OpenAI()
     
     prompt = f"""
-    You are an expert in extracting hierarchical tree structure.
-    You are given a tree structure of the previous part and the text of the current part.
-    Your task is to continue the tree structure from the previous part to include the current part.
+Extract NEW sections from content to extend existing structure.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+TASK: Find sections in current content that continue the document structure.
 
-    For the title, you need to extract the original title from the text, only fix the space inconsistency.
+RULES:
+1. Continue numbering from existing structure (check last section number)
+2. Only return NEW sections found in current content
+3. Maintain hierarchical consistency with existing structure
+4. Use original titles, fix only spacing
+5. Find physical_index where each NEW section starts
+6. Don't duplicate existing sections
 
-    The provided text contains tags like <physical_index_X> and <physical_index_X> to indicate the start and end of page X. 
+EXISTING STRUCTURE (last items):
+{json.dumps(existing_structure[-3:] if len(existing_structure) > 3 else existing_structure, indent=2)}
 
-    For the physical_index, you need to extract the physical index of the start of the section from the text. Keep the <physical_index_X> format.
+OUTPUT: Return only NEW sections as JSON array.
 
-    The response should be in the following format. 
-        [
-            {{
-                "structure": <structure index, "x.x.x"> (string),
-                "title": <title of the section, keep the original title>,
-                "physical_index": "<physical_index_X> (keep the format)"
-            }},
-            ...
-        ]    
-
-    Directly return the additional part of the final JSON structure. Do not output anything else.
-    
-    Given text:
-    {content}
-    
-    Previous tree structure:
-    {json.dumps(existing_structure, indent=2)}"""
+Current Content:
+{content}"""
     
     try:
         response = client.chat.completions.create(
