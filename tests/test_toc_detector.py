@@ -70,7 +70,7 @@ class TestTOCDetectorTool(unittest.TestCase):
             mock_response.choices[0].message.content = '{"toc_detected": "yes"}'
             mock_client.chat.completions.create.return_value = mock_response
             
-            result = detect_toc_single_page("Table of Contents\n1. Introduction", "gpt-4o-mini")
+            result = detect_toc_single_page("Table of Contents\n1. Introduction", "gpt-4.1-mini")
             
             self.assertEqual(result, "yes")
 

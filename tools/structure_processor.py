@@ -5,7 +5,30 @@ from pathlib import Path
 from typing import Dict, Any, List
 from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
-from core.utils import create_recovery_suggestions
+from core.utils import extract_json, count_tokens, create_recovery_suggestions
+from core.async_utils import run_async_safe
+
+def safe_int_conversion(value) -> int:
+    """Safely convert physical_index to integer, handling string formats"""
+    if value is None:
+        return None
+    
+    if isinstance(value, int):
+        return value
+    
+    if isinstance(value, str):
+        if value.startswith('<physical_index_'):
+            try:
+                return int(value.split('_')[-1].rstrip('>').strip())
+            except ValueError:
+                return None
+        else:
+            try:
+                return int(value)
+            except ValueError:
+                return None
+    
+    return None
 
 def structure_processor_tool(context: Dict[str, Any], 
                            enhancements: List[str] = None) -> Dict[str, Any]:
@@ -21,11 +44,11 @@ def structure_processor_tool(context: Dict[str, Any],
     """
     
     try:
-        # Reconstruct context
+        # Reconstruct context using consistent approach
         context = PageIndexContext.from_dict(context)
         
         # Setup logging directory
-        log_dir = Path(context.config["global"]["log_dir"]) / context.session_id
+        log_dir = Path(context.config.global_config.log_dir) / context.session_id
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log step start
@@ -41,21 +64,21 @@ def structure_processor_tool(context: Dict[str, Any],
 
         # Get configuration
         context.log_step("structure_processor", "loading_config")
-        processor_config = context.config["structure_processor"]
-        model = context.config["global"]["model"]
+        processor_config = context.config.structure_processor
+        model = context.config.global_config.model
         
         # Apply default enhancements if none specified
         context.log_step("structure_processor", "determining_enhancements")
         if enhancements is None:
             enhancements = []
-            if processor_config["if_add_node_id"] == "yes":
+            if processor_config.if_add_node_id == "yes":
                 enhancements.append("node_ids")
-            if processor_config["if_add_node_summary"] == "yes":
+            if processor_config.if_add_node_summary == "yes":
                 enhancements.append("summaries")
-            if processor_config["if_add_doc_description"] == "yes":
-                enhancements.append("doc_description")
-            if processor_config["if_add_node_text"] == "yes":
-                enhancements.append("node_text")
+            if processor_config.if_add_node_text == "yes":
+                enhancements.append("full_text")
+            if processor_config.if_add_doc_description == "yes":
+                enhancements.append("context")
         
         # Add preface if needed
         context.log_step("structure_processor", "adding_preface")
@@ -63,7 +86,7 @@ def structure_processor_tool(context: Dict[str, Any],
         
         # Check for start appearance (beginning of sections)
         context.log_step("structure_processor", "checking_section_starts")
-        structure_with_starts = asyncio.run(
+        structure_with_starts = run_async_safe(
             check_section_starts(structure_with_preface, pages, model, context)
         )
         
@@ -73,7 +96,7 @@ def structure_processor_tool(context: Dict[str, Any],
         
         # Process large nodes recursively if needed
         context.log_step("structure_processor", "processing_large_nodes")
-        final_tree = asyncio.run(
+        final_tree = run_async_safe(
             process_large_nodes_recursive(tree_structure, pages, processor_config, model, context)
         )
         
@@ -91,7 +114,7 @@ def structure_processor_tool(context: Dict[str, Any],
         # Add document description if requested
         if "doc_description" in enhancements:
             context.log_step("structure_processor", "generating_doc_description")
-            result["doc_description"] = asyncio.run(generate_document_description(enhanced_structure, model))
+            result["doc_description"] = run_async_safe(generate_document_description(enhanced_structure, model))
         
         context.structure_final = result
         
@@ -146,7 +169,8 @@ def add_preface_if_needed(structure: List[Dict[str, Any]], context) -> List[Dict
     # This is a potential crash point if physical_index is None.
     # Using .get() with a default prevents a crash but might hide the logic error.
     # The safest check is to see if the key exists and is not None.
-    first_item_index = structure[0].get('physical_index') if structure else None
+    first_item_index = safe_int_conversion(structure[0].get('physical_index')) if structure else None
+    
     if not structure or first_item_index is None or first_item_index > 1:
         context.log_step("add_preface_if_needed", "adding_preface_node")
         preface_node = {
@@ -165,11 +189,10 @@ async def check_section_starts(items: List[Dict[str, Any]], pages: List[tuple], 
     
     async def check_appearance(item, pages, model):
         """Check if item title appears at the start of its page"""
-        page_idx = item.get('physical_index')
+        page_idx = safe_int_conversion(item.get('physical_index'))
         
-        # Log the check
-        context.log_step("check_section_starts", "checking_appearance", {"item_title": item.get("title"), "physical_index": page_idx})
-
+        # Skip items without valid physical_index
+        # This check prevents crashes when physical_index is None or invalid
         if not page_idx or not (0 < page_idx <= len(pages)):
             item['appear_start'] = 'unknown'
             return item
@@ -196,9 +219,9 @@ def build_tree_structure(items: List[Dict[str, Any]], total_pages: int, context)
     # Add start and end indices without discarding items
     for i, item in enumerate(items):
         context.log_step("build_tree_structure", "processing_item", {"item_title": item.get("title"), "item_structure": item.get("structure")})
-        item['start_index'] = item.get('physical_index')
+        item['start_index'] = safe_int_conversion(item.get('physical_index'))
         if i < len(items) - 1:
-            next_physical_index = items[i + 1].get('physical_index')
+            next_physical_index = safe_int_conversion(items[i + 1].get('physical_index'))
             if next_physical_index is not None:
                 if items[i + 1].get('appear_start') == 'yes':
                     item['end_index'] = next_physical_index - 1
@@ -207,7 +230,7 @@ def build_tree_structure(items: List[Dict[str, Any]], total_pages: int, context)
             else:
                 # If the next item has no page, we cannot determine the end index from it.
                 # We can either leave it as null or set it to the same as the start index.
-                item['end_index'] = item.get('start_index')
+                item['end_index'] = item['start_index']
         else:
             item['end_index'] = total_pages
     
@@ -270,7 +293,7 @@ def list_to_tree(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 async def process_large_nodes_recursive(tree: List[Dict[str, Any]], pages: List[tuple],
-                                       config: Dict[str, Any], model: str, context) -> List[Dict[str, Any]]:
+                                       config, model: str, context) -> List[Dict[str, Any]]:
     """Recursively process large nodes by subdividing them"""
     
     async def process_node(node):
@@ -286,8 +309,8 @@ async def process_large_nodes_recursive(tree: List[Dict[str, Any]], pages: List[
             token_count = sum(page[1] for page in node_pages)
             page_count = end_idx - start_idx + 1
             
-            max_pages = config.get("max_page_num_each_node", 10)
-            max_tokens = config.get("max_token_num_each_node", 20000)
+            max_pages = config.max_page_num_each_node
+            max_tokens = config.max_token_num_each_node
             
             if page_count > max_pages and token_count >= max_tokens:
                 context.log_step("structure_processor", "subdividing_large_node", {
@@ -337,7 +360,7 @@ def apply_enhancements(structure: List[Dict[str, Any]], pages: List[tuple],
             add_node_text_recursive(copied_structure, pages, context)
         
         # Generate summaries asynchronously
-        asyncio.run(add_summaries(copied_structure, pages, model, context))
+        run_async_safe(add_summaries(copied_structure, pages, model, context))
         
         if "node_text" not in enhancements:
             remove_node_text(copied_structure)

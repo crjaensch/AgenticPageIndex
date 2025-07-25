@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from core.config_schema import PageIndexConfig
 
 @dataclass
 class PageIndexContext:
     """Context object that carries state through the PageIndex processing pipeline"""
     
     session_id: str
-    config: Dict[str, Any]
+    config: PageIndexConfig
     pdf_metadata: Dict[str, Any] 
     pages_file: Optional[str]  # Path to serialized pages data
     toc_info: Dict[str, Any]
@@ -20,7 +21,7 @@ class PageIndexContext:
     processing_log: List[Dict[str, Any]]
     current_step: str
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: PageIndexConfig):
         self.session_id = str(uuid.uuid4())
         self.config = config
         self.pdf_metadata = {}
@@ -73,7 +74,7 @@ class PageIndexContext:
         """Serialize context for Agent SDK (excluding large data)"""
         return {
             "session_id": self.session_id,
-            "config": self.config,
+            "config": asdict(self.config),
             "pdf_metadata": self.pdf_metadata,
             "pages_file": self.pages_file,
             "toc_info": self.toc_info,
@@ -85,10 +86,28 @@ class PageIndexContext:
         }
     
     @classmethod
-    def from_dict(cls, context_dict: Dict[str, Any]) -> 'PageIndexContext':
-        """Reconstruct context from dictionary"""
-        context = cls(context_dict["config"])
-        for key, value in context_dict.items():
-            if hasattr(context, key):
-                setattr(context, key, value)
+    def from_dict(cls, data: Dict[str, Any]) -> 'PageIndexContext':
+        """Create context from dictionary"""
+        from core.config_schema import PageIndexConfig
+        
+        # Handle both old dict format and new object format
+        config_data = data.get('config', {})
+        if isinstance(config_data, dict):
+            config = PageIndexConfig.from_dict(config_data)
+        else:
+            config = config_data
+            
+        context = cls(config)
+        
+        # Restore state from dictionary
+        context.session_id = data.get('session_id', str(uuid.uuid4()))
+        context.pdf_metadata = data.get('pdf_metadata', {})
+        context.pages_file = data.get('pages_file')
+        context.toc_info = data.get('toc_info', {})
+        context.structure_raw = data.get('structure_raw', [])
+        context.structure_verified = data.get('structure_verified', [])
+        context.structure_final = data.get('structure_final', {})
+        context.processing_log = data.get('processing_log', [])
+        context.current_step = data.get('current_step', "initialized")
+        
         return context

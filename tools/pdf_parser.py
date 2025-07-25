@@ -17,12 +17,11 @@ def pdf_parser_tool(context: Dict[str, Any], pdf_path: str) -> Dict[str, Any]:
     """
     
     try:
-        # Reconstruct context
-        context_obj = PageIndexContext(context["config"])
-        context_obj.__dict__.update(context)
+        # Reconstruct context using consistent approach
+        context_obj = PageIndexContext.from_dict(context)
         
         # Setup logging directory
-        log_dir = Path(context_obj.config["global"]["log_dir"]) / context_obj.session_id
+        log_dir = Path(context_obj.config.global_config.log_dir) / context_obj.session_id
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log step start
@@ -39,14 +38,15 @@ def pdf_parser_tool(context: Dict[str, Any], pdf_path: str) -> Dict[str, Any]:
             "pdf_path": pdf_path
         }
         
-        # Extract pages with token counts
-        parser_config = context_obj.config["pdf_parser"]
-        model = context_obj.config["global"]["model"]
+        # Get configuration values
+        pdf_parser_type = context_obj.config.pdf_parser.pdf_parser
+        model = context_obj.config.global_config.model
         
+        # Extract pages with token counts
         pages = get_page_tokens(
             pdf_path, 
             model=model,
-            pdf_parser=parser_config["pdf_parser"]
+            pdf_parser=pdf_parser_type
         )
         
         # Save pages to file

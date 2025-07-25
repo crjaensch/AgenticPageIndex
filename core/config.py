@@ -2,10 +2,12 @@ from dataclasses import dataclass, asdict
 from typing import Dict, Any
 import yaml
 from pathlib import Path
+from core.config_schema import PageIndexConfig, merge_configs
+from core.exceptions import PageIndexError
 
 @dataclass
 class GlobalConfig:
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-4.1-mini"
     log_dir: str = "./logs"
     session_timeout: int = 3600
 
@@ -40,7 +42,7 @@ class ConfigManager:
         self.config_path = config_path or Path(__file__).parent.parent / "config.yaml"
     
     def load_config(self, user_overrides: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Load configuration with user overrides"""
+        """Load configuration with user overrides and validation"""
         # Load default config
         if Path(self.config_path).exists():
             with open(self.config_path, 'r') as f:
@@ -48,28 +50,16 @@ class ConfigManager:
         else:
             base_config = {}
             
-        # Apply defaults
-        config = {
-            "global": asdict(GlobalConfig()),
-            "pdf_parser": asdict(PDFParserConfig()),
-            "toc_detector": asdict(TOCDetectorConfig()), 
-            "structure_extractor": asdict(StructureExtractorConfig()),
-            "structure_verifier": asdict(StructureVerifierConfig()),
-            "structure_processor": asdict(StructureProcessorConfig())
-        }
-        
-        # Merge with base config
-        for section, values in base_config.items():
-            if section in config:
-                config[section].update(values)
-        
         # Apply user overrides
         if user_overrides:
-            for section, values in user_overrides.items():
-                if section in config:
-                    config[section].update(values)
-                    
-        return config
+            base_config = merge_configs(base_config, user_overrides)
+        
+        # Validate configuration using schema
+        try:
+            validated_config = PageIndexConfig.from_dict(base_config)
+            return validated_config
+        except Exception as e:
+            raise PageIndexError(f"Configuration validation failed: {str(e)}")
     
     def migrate_legacy_config(self, legacy_config_path: str, output_path: str = None):
         """Migrate legacy config.yaml to new hierarchical structure"""
@@ -79,7 +69,7 @@ class ConfigManager:
         # Map legacy keys to new structure
         new_config = {
             "global": {
-                "model": legacy_config.get("model", "gpt-4o-mini")
+                "model": legacy_config.get("model", "gpt-4.1-mini")
             },
             "toc_detector": {
                 "toc_check_page_num": legacy_config.get("toc_check_page_num", 20)

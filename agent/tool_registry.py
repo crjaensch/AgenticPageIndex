@@ -49,7 +49,7 @@ PAGEINDEX_TOOLS = [
         "type": "function",
         "function": {
             "name": "structure_extractor",
-            "description": "Extract document hierarchy using specified strategy",
+            "description": "Extract document hierarchy using specified strategy. STRATEGY SELECTION: Use 'toc_with_pages' only if context.toc_info.found=true AND context.toc_info.has_page_numbers=true. Use 'toc_no_pages' only if context.toc_info.found=true AND context.toc_info.has_page_numbers=false. Use 'no_toc' if context.toc_info.found=false OR as fallback when other strategies fail.",
             "parameters": {
                 "type": "object",
                 "properties": {

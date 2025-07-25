@@ -14,7 +14,7 @@ def main():
     # 1. Setup configuration (optional - uses defaults if not provided)
     config_overrides = {
         "global": {
-            "model": "gpt-4o-mini",  # or "gpt-4o" for better quality
+            "model": "gpt-4.1-mini",  # or "gpt-4.1" for better quality
             "log_dir": "./processing_logs"
         },
         "toc_detector": {
@@ -79,7 +79,7 @@ def main():
             status = agent.get_processing_status(latest_session['session_id'])
             print(f"Last step completed: {status.get('current_step', 'unknown')}")
             
-            log_dir = Path(agent.config["global"]["log_dir"]) / latest_session['session_id']
+            log_dir = Path(agent.config.global_config.log_dir) / latest_session['session_id']
             print(f"Full diagnostic logs at: {log_dir}")
         
         raise

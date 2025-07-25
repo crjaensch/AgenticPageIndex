@@ -22,7 +22,7 @@ class PageIndexAgent:
         self.verbose = verbose
         
         # Setup logging directory
-        log_dir = Path(self.config["global"]["log_dir"])
+        log_dir = Path(self.config.global_config.log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
     
     def process_pdf(self, pdf_path: str) -> Dict[str, Any]:
@@ -57,7 +57,7 @@ class PageIndexAgent:
                 iteration += 1
                 
                 response = self.client.chat.completions.create(
-                    model=self.config["global"]["model"],
+                    model=self.config.global_config.model,
                     messages=messages,
                     tools=PAGEINDEX_TOOLS,
                     tool_choice="auto",
@@ -123,7 +123,7 @@ class PageIndexAgent:
                             })
                             
                             # Save failure state for diagnostics
-                            log_dir = Path(self.config["global"]["log_dir"]) / context.session_id
+                            log_dir = Path(self.config.global_config.log_dir) / context.session_id
                             log_dir.mkdir(parents=True, exist_ok=True)
                             context.log_step("agent", "tool_failed", {
                                 "tool": function_name,
@@ -148,7 +148,7 @@ class PageIndexAgent:
         except Exception as e:
             # Ensure diagnostic information is saved
             if 'context' in locals():
-                log_dir = Path(self.config["global"]["log_dir"]) / context.session_id
+                log_dir = Path(self.config.global_config.log_dir) / context.session_id
                 log_dir.mkdir(parents=True, exist_ok=True)
                 context.log_step("agent", "failed", {"error": str(e)})
                 context.save_checkpoint(log_dir, include_pages=True)
@@ -165,10 +165,12 @@ You are a PDF document structure extraction agent. Your task is to process PDF d
 1. **PDF Parser**: Always start by parsing the PDF document to extract text and metadata
 2. **TOC Detector**: Detect if the document has a table of contents and analyze its structure
 3. **Structure Extractor**: Extract the document hierarchy using the best strategy:
-   - If TOC found with page numbers → use "toc_with_pages" strategy
-   - If TOC found without page numbers → use "toc_no_pages" strategy  
-   - If no TOC found → use "no_toc" strategy
-   - If a strategy fails (confidence < 0.6) → fallback to the next strategy
+   - MANDATORY: Check context.toc_info state before strategy selection
+   - If context.toc_info.found=true AND context.toc_info.has_page_numbers=true → use "toc_with_pages"
+   - If context.toc_info.found=true AND context.toc_info.has_page_numbers=false → use "toc_no_pages"
+   - If context.toc_info.found=false → use "no_toc"
+   - FALLBACK: If any strategy fails due to invalid prerequisites → automatically try "no_toc"
+   - NEVER retry the same strategy twice - implement progressive fallback
 4. **Structure Verifier**: Verify the extracted structure and fix any errors
 5. **Structure Processor**: Generate the final tree structure with requested enhancements
 
@@ -194,7 +196,7 @@ Start by parsing the PDF document provided by the user.
     
     def get_processing_status(self, session_id: str) -> Dict[str, Any]:
         """Get processing status for a session"""
-        log_dir = Path(self.config["global"]["log_dir"]) / session_id
+        log_dir = Path(self.config.global_config.log_dir) / session_id
         checkpoint_file = log_dir / f"{session_id}_checkpoint.json"
         
         if not checkpoint_file.exists():
@@ -215,7 +217,7 @@ Start by parsing the PDF document provided by the user.
     
     def list_sessions(self) -> List[Dict[str, Any]]:
         """List all processing sessions"""
-        log_dir = Path(self.config["global"]["log_dir"])
+        log_dir = Path(self.config.global_config.log_dir)
         sessions = []
         
         if log_dir.exists():

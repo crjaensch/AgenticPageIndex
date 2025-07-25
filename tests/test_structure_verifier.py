@@ -91,7 +91,7 @@ class TestStructureVerifierTool(unittest.TestCase):
         item = {"title": "Introduction", "physical_index": 1}
 
         # Run async test
-        model = self.config["global"]["model"]
+        model = self.config.global_config.model
         result = asyncio.run(check_title_on_page(item, self.mock_pages, model, mock_client))
         self.assertTrue(result)
 

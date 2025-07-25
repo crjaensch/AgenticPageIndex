@@ -79,7 +79,7 @@ The agent uses a hierarchical configuration system. Create a `config.yaml` file:
 
 ```yaml
 global:
-  model: "gpt-4o-mini"
+  model: "gpt-4.1-mini"
   log_dir: "./logs"
 
 toc_detector:
@@ -148,7 +148,7 @@ for section in result['structure']:
 
 ```python
 config_overrides = {
-    "global": {"model": "gpt-4o"},
+    "global": {"model": "gpt-4.1-mini"},
     "structure_processor": {
         "if_add_node_summary": "yes",
         "if_add_node_text": "yes"

@@ -96,7 +96,7 @@ class TestStructureExtractorTool(unittest.TestCase):
             mock_client.chat.completions.create.return_value = mock_response
             
             toc_content = "1. Introduction ... 1\n2. Methods ... 5"
-            result = transform_toc_to_json(toc_content, "gpt-4o-mini")
+            result = transform_toc_to_json(toc_content, "gpt-4.1-mini")
             
             self.assertEqual(len(result), 2)
             self.assertEqual(result[0]["title"], "Introduction")

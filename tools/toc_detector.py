@@ -17,11 +17,11 @@ def toc_detector_tool(context: Dict[str, Any]) -> Dict[str, Any]:
     """
     
     try:
-        # Reconstruct context
+        # Reconstruct context using consistent approach
         context = PageIndexContext.from_dict(context)
         
         # Setup logging directory
-        log_dir = Path(context.config["global"]["log_dir"]) / context.session_id
+        log_dir = Path(context.config.global_config.log_dir) / context.session_id
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log step start
@@ -33,12 +33,12 @@ def toc_detector_tool(context: Dict[str, Any]) -> Dict[str, Any]:
             raise PageIndexToolError("No pages data available for TOC detection")
         
         # Get configuration
-        toc_config = context.config["toc_detector"]
-        model = context.config["global"]["model"]
+        detector_config = context.config.toc_detector
+        model = context.config.global_config.model
         
         # Find TOC pages
         context.log_step("toc_detector", "searching_toc_pages")
-        toc_page_list = find_toc_pages(pages, toc_config["toc_check_page_num"], model)
+        toc_page_list = find_toc_pages(pages, detector_config.toc_check_page_num, model)
         
         if not toc_page_list:
             # No TOC found

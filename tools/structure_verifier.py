@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Dict, Any, List
 from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
-from core.utils import extract_json, create_recovery_suggestions
+from core.utils import extract_json, count_tokens, create_recovery_suggestions
+from core.async_utils import run_async_safe
 
 def structure_verifier_tool(context: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -19,11 +20,11 @@ def structure_verifier_tool(context: Dict[str, Any]) -> Dict[str, Any]:
     """
     
     try:
-        # Reconstruct context
+        # Reconstruct context using consistent approach
         context = PageIndexContext.from_dict(context)
         
         # Setup logging directory
-        log_dir = Path(context.config["global"]["log_dir"]) / context.session_id
+        log_dir = Path(context.config.global_config.log_dir) / context.session_id
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log step start
@@ -39,8 +40,8 @@ def structure_verifier_tool(context: Dict[str, Any]) -> Dict[str, Any]:
             raise PageIndexToolError("No structure data available for verification")
         
         # Get configuration
-        verifier_config = context.config["structure_verifier"]
-        model = context.config["global"]["model"]
+        verifier_config = context.config.structure_verifier
+        model = context.config.global_config.model
         client = openai.AsyncOpenAI()
         
         # Validate and truncate physical indices that exceed document length
@@ -51,7 +52,7 @@ def structure_verifier_tool(context: Dict[str, Any]) -> Dict[str, Any]:
         
         # Verify structure accuracy
         context.log_step("structure_verifier", "verifying_accuracy")
-        accuracy, incorrect_items = asyncio.run(
+        accuracy, incorrect_items = run_async_safe(
             verify_structure_accuracy(validated_structure, pages, model, client)
         )
         
@@ -166,8 +167,21 @@ async def check_title_on_page(item: Dict[str, Any], pages: List[tuple], model: s
     title = item['title']
     physical_index = item['physical_index']
     
+    # Convert physical_index to int if it's a string
+    if isinstance(physical_index, str):
+        if physical_index.startswith('<physical_index_'):
+            try:
+                physical_index = int(physical_index.split('_')[-1].rstrip('>').strip())
+            except ValueError:
+                return 'no'
+        else:
+            try:
+                physical_index = int(physical_index)
+            except ValueError:
+                return 'no'
+    
     # Validate physical_index
-    if physical_index is None or physical_index < 1 or physical_index > len(pages):
+    if physical_index is None or not isinstance(physical_index, int) or physical_index < 1 or physical_index > len(pages):
         return 'no'
     
     page_text = pages[physical_index - 1][0]
@@ -316,7 +330,21 @@ def validate_and_truncate_indices(structure: List[Dict[str, Any]],
     
     for item in structure:
         if 'physical_index' in item and item['physical_index'] is not None:
-            if item['physical_index'] > page_count:
+            # Convert physical_index to int if it's a string
+            physical_index = item['physical_index']
+            if isinstance(physical_index, str):
+                if physical_index.startswith('<physical_index_'):
+                    try:
+                        physical_index = int(physical_index.split('_')[-1].rstrip('>').strip())
+                    except ValueError:
+                        physical_index = None
+                else:
+                    try:
+                        physical_index = int(physical_index)
+                    except ValueError:
+                        physical_index = None
+            
+            if physical_index is not None and isinstance(physical_index, int) and physical_index > page_count:
                 # Remove invalid physical_index
                 item_copy = item.copy()
                 item_copy['physical_index'] = None

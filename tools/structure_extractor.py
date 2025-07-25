@@ -1,8 +1,10 @@
+from typing import Dict, Any, List, Tuple, Optional
 import json
 import openai
 import copy
 import math
 from pathlib import Path
+from core.config import PageIndexConfig
 from typing import Dict, Any, List
 from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
@@ -21,11 +23,11 @@ def structure_extractor_tool(context: Dict[str, Any], strategy: str) -> Dict[str
     """
     
     try:
-        # Reconstruct context
+        # Reconstruct context using consistent approach
         context = PageIndexContext.from_dict(context)
         
         # Setup logging directory
-        log_dir = Path(context.config["global"]["log_dir"]) / context.session_id
+        log_dir = Path(context.config.global_config.log_dir) / context.session_id
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log step start
@@ -37,36 +39,60 @@ def structure_extractor_tool(context: Dict[str, Any], strategy: str) -> Dict[str
             raise PageIndexToolError("No pages data available for structure extraction")
         
         # Get configuration
-        extractor_config = context.config["structure_extractor"]
-        model = context.config["global"]["model"]
+        extractor_config = context.config.structure_extractor
+        model = context.config.global_config.model
         
-        # Execute strategy-specific extraction
+        # Execute strategy-specific extraction with resilient fallback
+        attempted_strategy = strategy
+        fallback_attempted = False
+        structure_raw = None
+        confidence = 0.0
+        
         if strategy == "toc_with_pages":
             if not context.toc_info.get("found") or not context.toc_info.get("has_page_numbers"):
-                raise PageIndexToolError("Strategy 'toc_with_pages' requires TOC with page numbers")
-            
-            structure_raw = extract_with_toc_pages(
-                pages, context.toc_info, extractor_config, model, context
-            )
-            confidence = 0.9
+                context.log_step("structure_extractor", "strategy_fallback", {
+                    "original_strategy": strategy,
+                    "reason": "TOC not found or lacks page numbers",
+                    "toc_found": context.toc_info.get("found", False),
+                    "has_page_numbers": context.toc_info.get("has_page_numbers", False),
+                    "fallback_to": "no_toc"
+                })
+                # Automatic fallback to no_toc strategy
+                strategy = "no_toc"
+                fallback_attempted = True
+            else:
+                structure_raw = extract_with_toc_pages(
+                    pages, context.toc_info, extractor_config, model, context
+                )
+                confidence = 0.9
             
         elif strategy == "toc_no_pages":
             if not context.toc_info.get("found"):
-                raise PageIndexToolError("Strategy 'toc_no_pages' requires TOC to be found")
-            
-            structure_raw = extract_with_toc_no_pages(
-                pages, context.toc_info, extractor_config, model, context
-            )
-            confidence = 0.7
-            
-        elif strategy == "no_toc":
+                context.log_step("structure_extractor", "strategy_fallback", {
+                    "original_strategy": strategy,
+                    "reason": "TOC not found",
+                    "toc_found": context.toc_info.get("found", False),
+                    "fallback_to": "no_toc"
+                })
+                # Automatic fallback to no_toc strategy
+                strategy = "no_toc"
+                fallback_attempted = True
+            else:
+                structure_raw = extract_with_toc_no_pages(
+                    pages, context.toc_info, extractor_config, model, context
+                )
+                confidence = 0.7
+        
+        # Execute fallback or direct no_toc strategy
+        if strategy == "no_toc":
             structure_raw = extract_without_toc(
                 pages, extractor_config, model, context
             )
-            confidence = 0.6
-            
-        else:
-            raise PageIndexToolError(f"Unknown extraction strategy: {strategy}")
+            confidence = 0.6 if not fallback_attempted else 0.5  # Lower confidence for fallback
+        
+        # Validate that we have a valid strategy and results
+        if structure_raw is None:
+            raise PageIndexToolError(f"Unknown extraction strategy: {attempted_strategy}")
         
         # Validate extraction results
         if not structure_raw:
@@ -75,11 +101,18 @@ def structure_extractor_tool(context: Dict[str, Any], strategy: str) -> Dict[str
         # Store results
         context.structure_raw = structure_raw
         
-        # Log success
+        # Log completion with strategy used and fallback information
         context.log_step("structure_extractor", "completed", {
             "strategy": strategy,
-            "items_extracted": len(structure_raw),
-            "confidence": confidence
+            "original_strategy": attempted_strategy,
+            "fallback_attempted": fallback_attempted,
+            "confidence": confidence,
+            "structure_count": len(structure_raw),
+            "toc_state": {
+                "found": context.toc_info.get("found", False),
+                "has_page_numbers": context.toc_info.get("has_page_numbers", False),
+                "pages_count": len(context.toc_info.get("pages", []))
+            }
         })
         
         # Save checkpoint
@@ -158,7 +191,7 @@ def structure_extractor_tool(context: Dict[str, Any], strategy: str) -> Dict[str
 
 
 def extract_with_toc_pages(pages: List[tuple], toc_info: Dict[str, Any], 
-                          config: Dict[str, Any], model: str, context) -> List[Dict[str, Any]]:
+                          config: PageIndexConfig, model: str, context) -> List[Dict[str, Any]]:
     """Extract structure using TOC with page numbers"""
     
     context.log_step("structure_extractor", "transforming_toc")
@@ -194,7 +227,7 @@ def extract_with_toc_pages(pages: List[tuple], toc_info: Dict[str, Any],
 
 
 def extract_with_toc_no_pages(pages: List[tuple], toc_info: Dict[str, Any],
-                             config: Dict[str, Any], model: str, context) -> List[Dict[str, Any]]:
+                             config: PageIndexConfig, model: str, context) -> List[Dict[str, Any]]:
     """Extract structure using TOC without page numbers"""
     
     context.log_step("structure_extractor", "transforming_toc")
@@ -213,8 +246,8 @@ def extract_with_toc_no_pages(pages: List[tuple], toc_info: Dict[str, Any],
         token_lengths.append(count_tokens(page_text, model))
     
     # Group pages to manage token limits
-    group_texts = page_list_to_group_text(page_contents, token_lengths, config["max_token_num_each_node"])
-    
+    group_texts = page_list_to_group_text(page_contents, token_lengths, config.max_token_num_each_node)
+
     # Match TOC items to content groups
     toc_with_indices = copy.deepcopy(toc_structured)
     for group_text in group_texts:
@@ -226,7 +259,7 @@ def extract_with_toc_no_pages(pages: List[tuple], toc_info: Dict[str, Any],
     return final_structure
 
 
-def extract_without_toc(pages: List[tuple], config: Dict[str, Any], 
+def extract_without_toc(pages: List[tuple], config: PageIndexConfig, 
                        model: str, context) -> List[Dict[str, Any]]:
     """Extract structure without TOC by analyzing content"""
     
@@ -241,7 +274,7 @@ def extract_without_toc(pages: List[tuple], config: Dict[str, Any],
         token_lengths.append(count_tokens(page_text, model))
     
     # Group pages to manage token limits
-    group_texts = page_list_to_group_text(page_contents, token_lengths, config["max_token_num_each_node"])
+    group_texts = page_list_to_group_text(page_contents, token_lengths, config.max_token_num_each_node)
     
     context.log_step("structure_extractor", "generating_structure", {"groups": len(group_texts)})
     

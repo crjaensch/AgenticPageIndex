@@ -16,7 +16,7 @@ def count_tokens(text: str, model: str) -> int:
     tokens = enc.encode(text)
     return len(tokens)
 
-def get_page_tokens(pdf_path: Union[str, BytesIO], model: str = "gpt-4o-mini", 
+def get_page_tokens(pdf_path: Union[str, BytesIO], model: str = "gpt-4.1-mini", 
                    pdf_parser: str = "PyMuPDF") -> List[Tuple[str, int]]:
     """Extract pages with token counts from PDF"""
     if pdf_parser == "PyPDF2":
