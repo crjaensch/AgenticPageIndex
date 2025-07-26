@@ -7,6 +7,7 @@ from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
 from core.utils import extract_json, count_tokens, create_recovery_suggestions
 from core.async_utils import run_async_safe
+from core.llm_batch_utils import batch_summarize_nodes
 
 def safe_int_conversion(value) -> int:
     """Safely convert physical_index to integer, handling string formats"""
@@ -430,34 +431,9 @@ def remove_node_text(structure: List[Dict[str, Any]]):
 
 
 async def add_summaries(structure: List[Dict[str, Any]], pages: List[tuple], model: str, context):
-    """Generate summaries for all nodes with text"""
+    """Generate summaries for all nodes with text using efficient batching"""
     
     context.log_step("add_summaries", "starting_summaries")
-    async def process_node_summary(node):
-        # Log the node being processed
-        context.log_step("add_summaries", "summarizing_node", {"node_title": node.get("title")})
-        text = get_text_for_node(node, pages, context)
-        if text and len(text.split()) > 20:  # Only summarize if text is substantial
-            client = openai.AsyncOpenAI()
-            
-            prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
-
-            Partial Document Text: {text}
-            
-            Directly return the description, do not include any other text.
-            """
-            
-            try:
-                response = await client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                )
-                
-                node['summary'] = response.choices[0].message.content
-            except Exception as e:
-                print(f"Error generating summary: {e}")
-                node['summary'] = "Summary generation failed"
     
     def collect_nodes(nodes):
         all_nodes = []
@@ -467,11 +443,126 @@ async def add_summaries(structure: List[Dict[str, Any]], pages: List[tuple], mod
                 all_nodes.extend(collect_nodes(node['nodes']))
         return all_nodes
     
+    # Collect all nodes that need summaries
     all_nodes = collect_nodes(structure)
-    tasks = [process_node_summary(node) for node in all_nodes if 'text' in node]
+    nodes_to_summarize = []
     
-    if tasks:
-        await asyncio.gather(*tasks)
+    # Prepare nodes for summarization with robust identification
+    for i, node in enumerate(all_nodes):
+        # Check if node has text content or can get text content
+        text = None
+        if 'text' in node:
+            text = node['text']
+        else:
+            # Try to get text content for the node
+            text = get_text_for_node(node, pages, context)
+        
+        if text and len(text.split()) > 20:  # Only substantial text
+            # Create a robust node entry for batching
+            node_entry = {
+                'node_index': i,  # Use index as reliable identifier
+                'node_ref': node,  # Keep reference to original node
+                'text': text,
+                'title': node.get('title', f'Section_{i}'),  # Fallback title
+                'original_title': node.get('title', '')  # Keep original for logging
+            }
+            nodes_to_summarize.append(node_entry)
+            context.log_step("add_summaries", "preparing_node_for_batch", {
+                "node_index": i, 
+                "node_title": node.get("title", f'Section_{i}')
+            })
+    
+    if nodes_to_summarize:
+        context.log_step("add_summaries", "batching_summaries", {"node_count": len(nodes_to_summarize)})
+        
+        try:
+            # Use batch processing for all summaries
+            summaries = await batch_summarize_nodes(nodes_to_summarize, model)
+            
+            # Apply summaries back to original nodes using reliable mapping
+            success_count = 0
+            for node_entry in nodes_to_summarize:
+                node_index = node_entry['node_index']
+                title = node_entry['title']
+                original_node = node_entry['node_ref']
+                
+                if title in summaries and summaries[title].strip():
+                    original_node['summary'] = summaries[title]
+                    success_count += 1
+                    context.log_step("add_summaries", "summary_applied", {
+                        "node_index": node_index,
+                        "node_title": node_entry['original_title']
+                    })
+                else:
+                    # Fallback: try individual processing for this node
+                    context.log_step("add_summaries", "batch_failed_fallback", {
+                        "node_index": node_index,
+                        "node_title": node_entry['original_title']
+                    })
+                    
+                    # Individual fallback processing
+                    try:
+                        client = openai.AsyncOpenAI()
+                        prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+
+                        Partial Document Text: {node_entry['text']}
+                        
+                        Directly return the description, do not include any other text.
+                        """
+                        
+                        response = await client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0,
+                        )
+                        
+                        original_node['summary'] = response.choices[0].message.content
+                        success_count += 1
+                        context.log_step("add_summaries", "individual_fallback_success", {
+                            "node_index": node_index
+                        })
+                    except Exception as fallback_error:
+                        original_node['summary'] = "Summary generation failed"
+                        context.log_step("add_summaries", "individual_fallback_failed", {
+                            "node_index": node_index,
+                            "error": str(fallback_error)
+                        })
+            
+            context.log_step("add_summaries", "batch_completed", {
+                "total_nodes": len(nodes_to_summarize),
+                "successful_summaries": success_count
+            })
+        
+        except Exception as e:
+            context.log_step("add_summaries", "batch_error", {"error": str(e)})
+            # Complete fallback: process all nodes individually
+            context.log_step("add_summaries", "falling_back_to_individual_processing")
+            
+            for node_entry in nodes_to_summarize:
+                try:
+                    client = openai.AsyncOpenAI()
+                    prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+
+                    Partial Document Text: {node_entry['text']}
+                    
+                    Directly return the description, do not include any other text.
+                    """
+                    
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0,
+                    )
+                    
+                    node_entry['node_ref']['summary'] = response.choices[0].message.content
+                except Exception as individual_error:
+                    node_entry['node_ref']['summary'] = "Summary generation failed"
+                    context.log_step("add_summaries", "individual_processing_failed", {
+                        "node_index": node_entry['node_index'],
+                        "error": str(individual_error)
+                    })
+    
+    context.log_step("add_summaries", "completed_summaries")
 
 
 def get_text_for_node(node: Dict[str, Any], pages: List[tuple], context) -> str:

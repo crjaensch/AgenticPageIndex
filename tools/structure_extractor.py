@@ -9,6 +9,7 @@ from typing import Dict, Any, List
 from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
 from core.utils import extract_json, count_tokens, create_recovery_suggestions
+from core.llm_batch_utils import LLMBatcher, BatchItem
 
 def structure_extractor_tool(context: Dict[str, Any], strategy: str) -> Dict[str, Any]:
     """
@@ -248,10 +249,24 @@ def extract_with_toc_no_pages(pages: List[tuple], toc_info: Dict[str, Any],
     # Group pages to manage token limits
     group_texts = page_list_to_group_text(page_contents, token_lengths, config.max_token_num_each_node)
 
-    # Match TOC items to content groups
+    # Match TOC items to content groups using batch processing
     toc_with_indices = copy.deepcopy(toc_structured)
-    for group_text in group_texts:
-        toc_with_indices = match_toc_to_content(group_text, toc_with_indices, model)
+    
+    if len(group_texts) > 1:
+        # Use batch processing for multiple groups
+        try:
+            from core.async_utils import run_async_safe
+            toc_with_indices = run_async_safe(batch_match_toc_to_content(group_texts, toc_with_indices, model))
+            context.log_step("structure_extractor", "batch_toc_matching_success", {"groups": len(group_texts)})
+        except Exception as e:
+            context.log_step("structure_extractor", "batch_toc_matching_failed", {"error": str(e)})
+            # Fallback to individual processing
+            for group_text in group_texts:
+                toc_with_indices = match_toc_to_content(group_text, toc_with_indices, model)
+    else:
+        # Single group - use individual processing
+        for group_text in group_texts:
+            toc_with_indices = match_toc_to_content(group_text, toc_with_indices, model)
     
     # Convert physical indices to integers
     final_structure = convert_physical_index_to_int(toc_with_indices)
@@ -278,13 +293,23 @@ def extract_without_toc(pages: List[tuple], config: PageIndexConfig,
     
     context.log_step("structure_extractor", "generating_structure", {"groups": len(group_texts)})
     
-    # Generate structure from first group
-    structure = generate_structure_from_content(group_texts[0], model)
-    
-    # Extend structure with remaining groups
-    for group_text in group_texts[1:]:
-        additional_structure = generate_additional_structure(structure, group_text, model)
-        structure.extend(additional_structure)
+    # Generate structure using batch processing when possible
+    if len(group_texts) > 1:
+        # Use batch processing for multiple groups
+        try:
+            from core.async_utils import run_async_safe
+            structure = run_async_safe(batch_generate_structure_from_content(group_texts, model))
+            context.log_step("structure_extractor", "batch_structure_generation_success", {"groups": len(group_texts)})
+        except Exception as e:
+            context.log_step("structure_extractor", "batch_structure_generation_failed", {"error": str(e)})
+            # Fallback to individual processing
+            structure = generate_structure_from_content(group_texts[0], model)
+            for group_text in group_texts[1:]:
+                additional_structure = generate_additional_structure(structure, group_text, model)
+                structure.extend(additional_structure)
+    else:
+        # Single group - use individual processing
+        structure = generate_structure_from_content(group_texts[0], model)
     
     # Convert physical indices to integers
     final_structure = convert_physical_index_to_int(structure)
@@ -334,6 +359,63 @@ TOC Content:
         return []
 
 
+async def batch_transform_toc_to_json(toc_contents: List[str], model: str) -> List[List[Dict[str, Any]]]:
+    """Token-aware batching for transforming multiple TOC contents to JSON format"""
+    if not toc_contents:
+        return []
+    
+    # Create batch items for each TOC content
+    batch_items = []
+    for i, toc_content in enumerate(toc_contents):
+        # Check token count before adding to batch
+        content_tokens = count_tokens(toc_content)
+        if content_tokens > 50000:  # Conservative limit for TOC content
+            print(f"Warning: TOC content {i} too large ({content_tokens} tokens), processing individually")
+            # Process large TOC individually
+            result = transform_toc_to_json(toc_content, model)
+            continue
+            
+        batch_items.append(BatchItem(
+            id=f"toc_{i}",
+            content=toc_content,
+            metadata={"toc_index": i, "token_count": content_tokens}
+        ))
+    
+    if not batch_items:
+        # All TOCs were too large, process individually
+        results = []
+        for toc_content in toc_contents:
+            result = transform_toc_to_json(toc_content, model)
+            results.append(result)
+        return results
+    
+    # Use token-aware batching
+    batcher = LLMBatcher(model, max_tokens=120000)
+    batch_results = await batcher.batch_toc_operations(batch_items, "transform_toc")
+    
+    # Process results and maintain order
+    results = [[] for _ in toc_contents]  # Initialize with empty lists
+    
+    for result in batch_results:
+        if not result.error:
+            try:
+                toc_data = json.loads(result.result)
+                toc_index = int(result.id.split('_')[1])  # Extract index from "toc_X"
+                results[toc_index] = toc_data.get('table_of_contents', [])
+            except Exception as e:
+                print(f"Error processing batch result for {result.id}: {e}")
+                # Fallback to individual processing
+                toc_index = int(result.id.split('_')[1])
+                results[toc_index] = transform_toc_to_json(toc_contents[toc_index], model)
+        else:
+            print(f"Batch error for {result.id}: {result.error}")
+            # Fallback to individual processing
+            toc_index = int(result.id.split('_')[1])
+            results[toc_index] = transform_toc_to_json(toc_contents[toc_index], model)
+    
+    return results
+
+
 def extract_toc_physical_indices(toc_structured: List[Dict[str, Any]], 
                                 content: str, model: str) -> List[Dict[str, Any]]:
     """Extract physical indices for TOC items from document content"""
@@ -374,6 +456,7 @@ Document Pages:
 
 def match_toc_to_content(content: str, toc_items: List[Dict[str, Any]], model: str) -> List[Dict[str, Any]]:
     """Match TOC items to content and add physical indices"""
+    # For single content chunk, use original approach (no batching benefit)
     client = openai.OpenAI()
     
     prompt = f"""
@@ -409,8 +492,105 @@ Current TOC Structure:
         return toc_items
 
 
+async def batch_match_toc_to_content(content_chunks: List[str], toc_items: List[Dict[str, Any]], model: str) -> List[Dict[str, Any]]:
+    """Token-aware batching for matching TOC items across multiple content chunks with proper attribute preservation"""
+    if not content_chunks:
+        return toc_items
+    
+    # For single chunk, use individual processing (no batching benefit)
+    if len(content_chunks) == 1:
+        return match_toc_to_content(content_chunks[0], toc_items, model)
+    
+    # Create batch items for each content chunk with current TOC state
+    batch_items = []
+    current_toc_state = copy.deepcopy(toc_items)
+    
+    for i, content in enumerate(content_chunks):
+        # Check token count to prevent overflow
+        content_tokens = count_tokens(content)
+        toc_tokens = count_tokens(json.dumps(current_toc_state, indent=2))
+        total_tokens = content_tokens + toc_tokens + 500  # Buffer for prompt
+        
+        if total_tokens > 100000:  # Conservative limit
+            print(f"Warning: Content chunk {i} too large ({total_tokens} tokens), using individual processing")
+            # Process this chunk individually and update state
+            current_toc_state = match_toc_to_content(content, current_toc_state, model)
+            continue
+            
+        batch_items.append(BatchItem(
+            id=f"chunk_{i}",
+            content=f"Document Content:\n{content}\n\nCurrent TOC Structure:\n{json.dumps(current_toc_state, indent=2)}",
+            metadata={"chunk_index": i, "toc_snapshot": copy.deepcopy(current_toc_state)}
+        ))
+    
+    if not batch_items:
+        # All chunks were too large, already processed individually
+        return current_toc_state
+    
+    try:
+        # Use token-aware batching
+        batcher = LLMBatcher(model, max_tokens=120000)
+        results = await batcher.batch_toc_operations(batch_items, "match_content")
+        
+        # Process results with careful attribute preservation
+        final_toc = copy.deepcopy(current_toc_state)
+        
+        for result in results:
+            if not result.error and result.result.strip():
+                try:
+                    # Parse the batch result
+                    chunk_result = json.loads(result.result)
+                    
+                    # Validate that result is a list of TOC items
+                    if not isinstance(chunk_result, list):
+                        raise ValueError(f"Expected list, got {type(chunk_result)}")
+                    
+                    # Carefully merge only the physical_index updates
+                    for updated_item in chunk_result:
+                        if not isinstance(updated_item, dict) or 'title' not in updated_item:
+                            continue
+                            
+                        # Find matching item in final_toc by title
+                        for j, toc_item in enumerate(final_toc):
+                            if toc_item.get('title') == updated_item.get('title'):
+                                # Only update physical_index if it's new and valid
+                                if ('physical_index' in updated_item and 
+                                    updated_item['physical_index'] and 
+                                    'physical_index' not in toc_item):
+                                    final_toc[j]['physical_index'] = updated_item['physical_index']
+                                break
+                                
+                except (json.JSONDecodeError, ValueError, KeyError) as e:
+                    print(f"Error parsing batch result for {result.id}: {e}")
+                    # Fallback: process this chunk individually
+                    chunk_index = result.id.split('_')[1]
+                    if chunk_index.isdigit():
+                        chunk_idx = int(chunk_index)
+                        if chunk_idx < len(content_chunks):
+                            final_toc = match_toc_to_content(content_chunks[chunk_idx], final_toc, model)
+            else:
+                # Batch failed for this chunk, process individually
+                print(f"Batch failed for {result.id}: {result.error}")
+                chunk_index = result.id.split('_')[1]
+                if chunk_index.isdigit():
+                    chunk_idx = int(chunk_index)
+                    if chunk_idx < len(content_chunks):
+                        final_toc = match_toc_to_content(content_chunks[chunk_idx], final_toc, model)
+        
+        return final_toc
+        
+    except Exception as e:
+        print(f"Batch processing failed completely: {e}")
+        # Complete fallback to individual processing
+        final_toc = copy.deepcopy(toc_items)
+        for content in content_chunks:
+            final_toc = match_toc_to_content(content, final_toc, model)
+        return final_toc
+
+
 def generate_structure_from_content(content: str, model: str) -> List[Dict[str, Any]]:
     """Generate initial structure from document content"""
+    # For single content chunk, use original approach
     client = openai.OpenAI()
     
     prompt = f"""
@@ -446,6 +626,161 @@ Document Content:
     except Exception as e:
         print(f"Error in structure generation: {e}")
         return []
+
+
+async def batch_generate_structure_from_content(content_chunks: List[str], model: str) -> List[Dict[str, Any]]:
+    """Token-aware batching for generating structure from multiple content chunks with proper sequential processing"""
+    if not content_chunks:
+        return []
+    
+    # For single chunk, use individual processing (no batching benefit)
+    if len(content_chunks) == 1:
+        return generate_structure_from_content(content_chunks[0], model)
+    
+    # IMPORTANT: Structure generation requires sequential processing to maintain
+    # proper hierarchical numbering and continuity across chunks.
+    # Batch processing would break the sequential dependency where each chunk
+    # extends the structure from previous chunks.
+    
+    # Use the original sequential logic to maintain functionality
+    try:
+        # Generate structure from first group
+        structure = generate_structure_from_content(content_chunks[0], model)
+        
+        # Extend structure with remaining groups sequentially
+        for i, group_text in enumerate(content_chunks[1:], 1):
+            try:
+                additional_structure = generate_additional_structure(structure, group_text, model)
+                structure.extend(additional_structure)
+            except Exception as e:
+                print(f"Error processing content chunk {i}: {e}")
+                # Continue with remaining chunks even if one fails
+                continue
+        
+        return structure
+        
+    except Exception as e:
+        print(f"Error in structure generation: {e}")
+        # Complete fallback - process each chunk independently and merge
+        all_structure = []
+        for i, content in enumerate(content_chunks):
+            try:
+                chunk_structure = generate_structure_from_content(content, model)
+                all_structure.extend(chunk_structure)
+            except Exception as chunk_error:
+                print(f"Error processing chunk {i}: {chunk_error}")
+                continue
+        
+        return all_structure
+
+
+async def batch_generate_structure_from_content_experimental(content_chunks: List[str], model: str) -> List[Dict[str, Any]]:
+    """EXPERIMENTAL: True batch processing for structure generation (may break sequential dependencies)"""
+    if not content_chunks:
+        return []
+    
+    # Create batch items for each content chunk
+    batch_items = []
+    for i, content in enumerate(content_chunks):
+        # Check token count before adding to batch
+        content_tokens = count_tokens(content)
+        if content_tokens > 80000:  # Conservative limit for structure generation
+            print(f"Warning: Content chunk {i} too large ({content_tokens} tokens), processing individually")
+            # Process large chunk individually and add to results later
+            continue
+            
+        batch_items.append(BatchItem(
+            id=f"content_chunk_{i}",
+            content=content,
+            metadata={"chunk_index": i, "token_count": content_tokens}
+        ))
+    
+    if not batch_items:
+        # All chunks were too large, fall back to sequential processing
+        return await batch_generate_structure_from_content(content_chunks, model)
+    
+    try:
+        # Use token-aware batching
+        batcher = LLMBatcher(model, max_tokens=100000)  # Conservative limit
+        
+        # Define the operation prompt template
+        base_prompt = """
+Extract document structure from the following content chunks independently.
+
+TASK: Identify sections, subsections, and their hierarchy for each chunk.
+
+RULES:
+1. Detect headings, titles, and section breaks
+2. Assign hierarchical numbers starting from 1 for each chunk
+3. Use original titles, fix only spacing issues
+4. Find physical_index where each section starts: "<physical_index_X>"
+5. Include all significant structural elements
+6. Skip headers, footers, page numbers
+
+OUTPUT FORMAT:
+{
+  "results": [
+    {"id": "content_chunk_0", "result": [{"structure": "1", "title": "Introduction", "physical_index": "<physical_index_1>"}]},
+    {"id": "content_chunk_1", "result": [{"structure": "1", "title": "Methods", "physical_index": "<physical_index_5>"}]}
+  ]
+}
+
+"""
+        
+        # Split into token-aware batches
+        batches = batcher._split_items_by_token_limit(batch_items, base_prompt)
+        
+        all_structure = []
+        for batch in batches:
+            try:
+                # Build batch prompt
+                batch_prompt = base_prompt
+                for item in batch:
+                    batch_prompt += f"ID: {item.id}\n"
+                    batch_prompt += f"Document Content:\n{item.content}\n\n"
+                
+                response = await batcher.client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": batch_prompt}],
+                    temperature=0,
+                )
+                
+                # Parse batch response
+                try:
+                    response_data = json.loads(response.choices[0].message.content)
+                    results = response_data.get("results", [])
+                    
+                    # Sort results by chunk index to maintain order
+                    sorted_results = sorted(results, key=lambda x: int(x.get("id", "content_chunk_0").split("_")[-1]))
+                    
+                    for result in sorted_results:
+                        structure_items = result.get("result", [])
+                        all_structure.extend(structure_items)
+                        
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing batch response: {e}")
+                    # Fallback to individual processing for this batch
+                    for item in batch:
+                        chunk_index = item.metadata["chunk_index"]
+                        if chunk_index < len(content_chunks):
+                            structure = generate_structure_from_content(content_chunks[chunk_index], model)
+                            all_structure.extend(structure)
+                        
+            except Exception as e:
+                print(f"Error in batch structure generation: {e}")
+                # Fallback to individual processing for this batch
+                for item in batch:
+                    chunk_index = item.metadata["chunk_index"]
+                    if chunk_index < len(content_chunks):
+                        structure = generate_structure_from_content(content_chunks[chunk_index], model)
+                        all_structure.extend(structure)
+        
+        return all_structure
+        
+    except Exception as e:
+        print(f"Experimental batch processing failed: {e}")
+        # Fallback to sequential processing
+        return await batch_generate_structure_from_content(content_chunks, model)
 
 
 def generate_additional_structure(existing_structure: List[Dict[str, Any]], 
