@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
-from core.utils import extract_json, count_tokens, create_recovery_suggestions
+from core.utils import create_recovery_suggestions
 from core.async_utils import run_async_safe
 from core.llm_batch_utils import batch_summarize_nodes
 

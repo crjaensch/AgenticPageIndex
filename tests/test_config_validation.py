@@ -2,12 +2,15 @@
 Unit tests for configuration schema validation
 """
 
+import sys
+from pathlib import Path
+# Add the project root to the path so we can import the modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import tempfile
 import yaml
-from pathlib import Path
-import sys
 from core.config import ConfigManager
-from core.config_schema import PageIndexConfig, GlobalConfig, PDFParserConfig
+from core.config_schema import PageIndexConfig
 from core.exceptions import PageIndexError
 
 
@@ -146,24 +149,22 @@ def test_missing_config_file():
 
 if __name__ == "__main__":
     # Run tests manually for verification
-    test_instance = TestConfigValidation()
-    
     print("Running configuration validation tests...")
     
     try:
-        test_instance.test_valid_configuration()
+        test_valid_configuration()
         print("✅ Valid configuration test passed")
     except Exception as e:
         print(f"❌ Valid configuration test failed: {e}")
     
     try:
-        test_instance.test_invalid_model_name()
+        test_invalid_model_name()
         print("✅ Invalid model name test passed")
     except Exception as e:
         print(f"❌ Invalid model name test failed: {e}")
     
     try:
-        test_instance.test_missing_config_file()
+        test_missing_config_file()
         print("✅ Missing config file test passed")
     except Exception as e:
         print(f"❌ Missing config file test failed: {e}")

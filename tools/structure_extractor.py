@@ -1,11 +1,10 @@
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List
 import json
 import openai
 import copy
 import math
 from pathlib import Path
 from core.config import PageIndexConfig
-from typing import Dict, Any, List
 from core.context import PageIndexContext
 from core.exceptions import PageIndexToolError
 from core.utils import extract_json, count_tokens, create_recovery_suggestions

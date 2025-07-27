@@ -4,7 +4,7 @@ global:
   session_timeout: 3600
 
 pdf_parser:
-  pdf_parser: "PyMuPDF"  # or "PyPDF2"
+  pdf_parser: "PyMuPDF"  # or "pypdf"
 
 toc_detector:
   toc_check_page_num: 20

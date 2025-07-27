@@ -3,7 +3,7 @@ Configuration schema validation for PageIndex Agent
 Provides type-safe configuration validation with sensible defaults
 """
 
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any
 from dataclasses import dataclass, field
 import re
 from core.exceptions import PageIndexError
@@ -108,16 +108,16 @@ class StructureProcessorConfig:
             raise PageIndexError("Max token number each node must be between 1000 and 50000")
         
         bool_fields = ["enable_batch_processing", "enable_streaming"]
-        for field in bool_fields:
-            value = getattr(self, field)
+        for field_name in bool_fields:
+            value = getattr(self, field_name)
             if not isinstance(value, bool):
-                raise PageIndexError(f"{field} must be a boolean")
+                raise PageIndexError(f"{field_name} must be a boolean")
         
         string_bool_fields = ["if_add_node_id", "if_add_node_summary", "if_add_doc_description", "if_add_node_text"]
-        for field in string_bool_fields:
-            value = getattr(self, field)
+        for field_name in string_bool_fields:
+            value = getattr(self, field_name)
             if value not in ["yes", "no"]:
-                raise PageIndexError(f"{field} must be either 'yes' or 'no'")
+                raise PageIndexError(f"{field_name} must be either 'yes' or 'no'")
 
 
 @dataclass

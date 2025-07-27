@@ -4,7 +4,7 @@ Unit tests for the llm_batch_utils module
 
 import unittest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from core.llm_batch_utils import LLMBatcher, BatchItem, BatchResult, batch_summarize_nodes
 

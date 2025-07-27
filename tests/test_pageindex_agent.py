@@ -4,10 +4,9 @@ Unit tests for the PageIndexAgent class
 
 import unittest
 import tempfile
-import json
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 # Add the project root to the path so we can import the modules
 sys.path.insert(0, str(Path(__file__).parent.parent))

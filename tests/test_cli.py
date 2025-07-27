@@ -5,7 +5,6 @@ Unit tests for the cli module
 import unittest
 import tempfile
 import json
-import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 

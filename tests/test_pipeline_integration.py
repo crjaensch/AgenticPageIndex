@@ -9,9 +9,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from agent.pageindex_agent import PageIndexAgent
-from core.context import PageIndexContext
 from core.config import ConfigManager
-from core.exceptions import PageIndexError, PageIndexToolError
 
 
 class TestPipelineIntegration(unittest.TestCase):

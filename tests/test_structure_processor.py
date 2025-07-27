@@ -5,14 +5,13 @@ Unit tests for the structure_processor module
 import unittest
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 from tools.structure_processor import (
     safe_int_conversion, add_preface_if_needed, build_tree_structure, 
     list_to_tree, apply_enhancements, add_node_ids, add_node_text_recursive,
     remove_node_text, count_nodes, calculate_tree_depth
 )
-from core.context import PageIndexContext
 
 
 class TestStructureProcessor(unittest.TestCase):

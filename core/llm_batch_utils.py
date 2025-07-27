@@ -2,9 +2,8 @@
 LLM Batching utilities for efficient token usage and reduced API calls
 """
 
-import asyncio
 import openai
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from core.utils import count_tokens
 
