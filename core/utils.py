@@ -2,7 +2,7 @@ import tiktoken
 import logging
 import os
 import json
-import PyPDF2
+import pypdf
 import pymupdf
 from io import BytesIO
 from typing import List, Tuple, Dict, Any, Union
@@ -20,7 +20,7 @@ def get_page_tokens(pdf_path: Union[str, BytesIO], model: str = "gpt-4.1-mini",
                    pdf_parser: str = "PyMuPDF") -> List[Tuple[str, int]]:
     """Extract pages with token counts from PDF"""
     if pdf_parser == "PyPDF2":
-        pdf_reader = PyPDF2.PdfReader(pdf_path)
+        pdf_reader = pypdf.PdfReader(pdf_path)
         page_list = []
         for page_num in range(len(pdf_reader.pages)):
             page = pdf_reader.pages[page_num]
@@ -52,7 +52,7 @@ def get_pdf_name(pdf_path: Union[str, BytesIO]) -> str:
         return os.path.basename(pdf_path)
     elif isinstance(pdf_path, BytesIO):
         try:
-            pdf_reader = PyPDF2.PdfReader(pdf_path)
+            pdf_reader = pypdf.PdfReader(pdf_path)
             meta = pdf_reader.metadata
             pdf_name = meta.title if meta and meta.title else 'Untitled'
             return sanitize_filename(pdf_name)

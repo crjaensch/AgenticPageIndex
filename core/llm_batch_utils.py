@@ -207,16 +207,16 @@ Document sections to summarize:
         
         batches = []
         current_batch = []
-        current_tokens = count_tokens(base_prompt)
+        current_tokens = count_tokens(base_prompt, self.model)
         
         for item in items:
-            item_tokens = count_tokens(f"ID: {item.id}\nContent: {item.content}\n\n")
+            item_tokens = count_tokens(f"ID: {item.id}\nContent: {item.content}\n\n", self.model)
             
             # If adding this item would exceed limit, start new batch
             if current_tokens + item_tokens > self.max_tokens and current_batch:
                 batches.append(current_batch)
                 current_batch = [item]
-                current_tokens = count_tokens(base_prompt) + item_tokens
+                current_tokens = count_tokens(base_prompt, self.model) + item_tokens
             else:
                 current_batch.append(item)
                 current_tokens += item_tokens

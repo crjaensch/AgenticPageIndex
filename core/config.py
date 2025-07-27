@@ -13,7 +13,7 @@ class GlobalConfig:
 
 @dataclass  
 class PDFParserConfig:
-    pdf_parser: str = "PyMuPDF"  # or "PyPDF2"
+    pdf_parser: str = "PyMuPDF"  # or "pypdf"
     
 @dataclass
 class TOCDetectorConfig:
